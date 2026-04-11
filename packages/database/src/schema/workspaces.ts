@@ -25,7 +25,7 @@ export const workspaces = pgTable(
       .default(0),
     storageLimit: bigint('storage_limit', { mode: 'number' })
       .notNull()
-      .default(5368709120), // 5GB
+      .default(536870912000), // 500GB
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
