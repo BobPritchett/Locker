@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(ls -la /c/Code/Locker/apps/web/*.ts)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"signUpEmail\\\\|sign-up-email\\\\|\\\\\"hooks\\\\\"\" c:/Code/Locker/apps/web/node_modules/better-auth/dist/auth/*.mjs)",
+      "Bash(docker exec:*)",
+      "Bash(pnpm db:migrate)",
+      "Bash(npx next:*)",
+      "Bash(pnpm add:*)",
+      "Bash(ls c:/Code/Locker/node_modules/.pnpm/tailwindcss*/node_modules/tailwindcss/package.json)"
+    ]
+  }
+}
