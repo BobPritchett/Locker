@@ -1,7 +1,7 @@
-node_modules
-.next
-.turbo
-dist
+**/node_modules
+**/.next
+**/.turbo
+**/dist
 .git
 .gitignore
 .env
@@ -15,3 +15,6 @@ e2e
 .idea
 .DS_Store
 .claude
+fly.toml
+docker-compose.yml
+services

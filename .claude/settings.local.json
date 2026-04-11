@@ -9,7 +9,16 @@
       "Bash(pnpm db:migrate)",
       "Bash(npx next:*)",
       "Bash(pnpm add:*)",
-      "Bash(ls c:/Code/Locker/node_modules/.pnpm/tailwindcss*/node_modules/tailwindcss/package.json)"
+      "Bash(ls c:/Code/Locker/node_modules/.pnpm/tailwindcss*/node_modules/tailwindcss/package.json)",
+      "Bash(fly version:*)",
+      "Bash(fly auth:*)",
+      "Bash(fly launch:*)",
+      "Bash(fly platform:*)",
+      "Bash(fly postgres:*)",
+      "Bash(openssl rand:*)",
+      "Bash(fly secrets:*)",
+      "Bash(fly deploy:*)",
+      "Bash(fly certs:*)"
     ]
   }
 }

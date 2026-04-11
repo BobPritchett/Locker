@@ -62,6 +62,12 @@ COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public ./apps/web/public
 
+# Copy migration files and script for release_command
+COPY --from=builder /app/packages/database/drizzle ./packages/database/drizzle
+COPY packages/database/migrate-prod.js ./packages/database/migrate-prod.js
+# Install only pg for the migration script (small footprint)
+RUN npm install --no-package-lock --no-save pg 2>/dev/null
+
 # Create local-blobs directory for local storage provider
 RUN mkdir -p /app/local-blobs
 
