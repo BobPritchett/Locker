@@ -7,6 +7,7 @@ import {
   bigint,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import { MAX_STORAGE_PER_USER } from '@locker/common';
 
 // ── Users ──────────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ export const users = pgTable('users', {
   image: text('image'),
   storageUsed: bigint('storage_used', { mode: 'number' }).default(0).notNull(),
   storageLimit: bigint('storage_limit', { mode: 'number' })
-    .default(5368709120) // 5GB
+    .default(MAX_STORAGE_PER_USER)
     .notNull(),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),

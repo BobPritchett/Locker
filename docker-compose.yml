@@ -138,9 +138,6 @@ services:
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
       AI_GATEWAY_MODEL: ${AI_GATEWAY_MODEL:-}
 
-      # Storage limits (optional)
-      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-}
-      MAX_STORAGE_PER_USER: ${MAX_STORAGE_PER_USER:-}
     volumes:
       - blob_data:/app/local-blobs
 

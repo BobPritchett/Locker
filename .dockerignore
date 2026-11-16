@@ -4,8 +4,7 @@
 **/dist
 .git
 .gitignore
-.env
-.env.*
+**/.env*
 *.md
 local-blobs
 coverage

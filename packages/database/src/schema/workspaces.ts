@@ -10,6 +10,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import { MAX_STORAGE_PER_WORKSPACE } from '@locker/common';
 import { users } from './users';
 
 export const workspaces = pgTable(
@@ -26,7 +27,7 @@ export const workspaces = pgTable(
       .default(0),
     storageLimit: bigint('storage_limit', { mode: 'number' })
       .notNull()
-      .default(536870912000), // 500GB
+      .default(MAX_STORAGE_PER_WORKSPACE),
     themeConfig: jsonb('theme_config').$type<{
       baseColor: string;
       accentColor: string;

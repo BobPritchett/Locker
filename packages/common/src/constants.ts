@@ -1,11 +1,11 @@
 // ── File size limits ────────────────────────────────────────────────────────
 
-export const MAX_FILE_SIZE = 300 * 1024 * 1024; // 300MB
+export const MAX_FILE_SIZE = 4 * 1024 ** 3; // 4 GiB
 export const MULTIPART_THRESHOLD = 10 * 1024 * 1024; // 10MB - use multipart above this
 export const MULTIPART_PART_SIZE = 10 * 1024 * 1024; // 10MB per part
 export const MULTIPART_MAX_CONCURRENCY = 4;
-export const MAX_STORAGE_PER_USER = 500 * 1024 * 1024 * 1024; // 500GB
-export const MAX_STORAGE_PER_WORKSPACE = 500 * 1024 * 1024 * 1024; // 500GB
+export const MAX_STORAGE_PER_USER = 50 * 1024 ** 3; // 50 GiB
+export const MAX_STORAGE_PER_WORKSPACE = 50 * 1024 ** 3; // 50 GiB
 
 // ── Pagination ──────────────────────────────────────────────────────────────
 
