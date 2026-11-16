@@ -175,6 +175,13 @@ export function UploadDialog({
     );
   };
 
+  const resetDialog = (open: boolean) => {
+    setFiles([]);
+    setInitializedFor(null);
+    setSelectedTagIds(new Set());
+    onOpenChange(open);
+  };
+
   const handleUpload = async () => {
     setUploading(true);
     const controller = new AbortController();
@@ -206,6 +213,7 @@ export function UploadDialog({
             abort: abortMutation,
           },
           onProgress: (progress) => {
+            if (controller.signal.aborted) return;
             setFiles((prev) =>
               prev.map((f, idx) =>
                 idx === i ? { ...f, progress: progress.percentage } : f,
@@ -215,12 +223,16 @@ export function UploadDialog({
           abortSignal: controller.signal,
         });
 
+        if (controller.signal.aborted) break;
+
         if (selectedTagIds.size > 0) {
           await setFileTagsMutation.mutateAsync({
             fileId,
             tagIds: [...selectedTagIds],
           });
         }
+
+        if (controller.signal.aborted) break;
 
         successCount++;
         setFiles((prev) =>
@@ -241,13 +253,16 @@ export function UploadDialog({
       }
     }
 
-    setUploading(false);
-    abortControllerRef.current = null;
     utils.files.list.invalidate();
     utils.storage.usage.invalidate();
     if (selectedTagIds.size > 0) {
       utils.tags.getFileTagsBatch.invalidate();
     }
+
+    if (abortControllerRef.current !== controller) return;
+    setUploading(false);
+    abortControllerRef.current = null;
+
     if (!controller.signal.aborted) {
       if (errorCount > 0 && successCount === 0) {
         toast.error("Upload failed");
@@ -255,25 +270,21 @@ export function UploadDialog({
         toast.warning(`${successCount} uploaded, ${errorCount} failed`);
       } else if (successCount > 0) {
         toast.success("Upload complete");
-        // Auto-close dialog when all files uploaded successfully
-        setFiles([]);
-        setInitializedFor(null);
-        setSelectedTagIds(new Set());
-        onOpenChange(false);
+        resetDialog(false);
       }
     }
   };
 
   const handleCancel = () => {
     abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setUploading(false);
+    resetDialog(false);
   };
 
   const handleClose = (open: boolean) => {
     if (!uploading) {
-      setFiles([]);
-      setInitializedFor(null);
-      setSelectedTagIds(new Set());
-      onOpenChange(open);
+      resetDialog(open);
     }
   };
 

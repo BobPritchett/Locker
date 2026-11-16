@@ -63,6 +63,67 @@ test.describe.serial('Desktop file drop upload', () => {
     await expect(page.getByRole('button', { name: /upload 1 file/i })).toBeVisible();
   });
 
+  test('dropping ZIPs into the open upload dialog queues each file once', async ({ page }) => {
+    await loginAs(page);
+    await page.getByRole('button', { name: 'Upload', exact: true }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Upload files' });
+    const dataTransfer = await page.evaluateHandle(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(['ZIP fixture'], 'album.zip'));
+      dt.items.add(new File(['ZIP fixture'], 'scrapbook.zip', { type: 'application/x-zip-compressed' }));
+      dt.items.add(new File(['ZIP fixture'], 'family.ZIP', { type: 'application/zip' }));
+      return dt;
+    });
+    await dialog.getByText('Drop files here or click to browse').dispatchEvent('drop', {
+      dataTransfer,
+    });
+
+    await expect(dialog.getByRole('button', { name: 'Upload 3 files' })).toBeVisible();
+    await expect(dialog.getByText('album.zip', { exact: true })).toHaveCount(1);
+    await expect(dialog.getByText('scrapbook.zip', { exact: true })).toHaveCount(1);
+    await expect(dialog.getByText('family.ZIP', { exact: true })).toHaveCount(1);
+    await expect(dialog.locator('.lucide-archive')).toHaveCount(3);
+  });
+
+  test('cancelling the current upload closes the dialog and keeps the completed file', async ({ page }) => {
+    await loginAs(page);
+    await page.getByRole('button', { name: 'Upload', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Upload files' });
+    await dialog.locator('input[type=file]').setInputFiles([
+      { name: 'completed.txt', mimeType: 'text/plain', buffer: Buffer.from('completed') },
+      { name: 'cancelled.txt', mimeType: 'text/plain', buffer: Buffer.from('cancelled') },
+      { name: 'queued.txt', mimeType: 'text/plain', buffer: Buffer.from('never started') },
+    ]);
+
+    let seen = 0;
+    let releaseTransfer!: () => void;
+    const holdTransfer = new Promise<void>((resolve) => { releaseTransfer = resolve; });
+    await page.route('**/api/upload/stream', async (route) => {
+      if (++seen === 1) {
+        await route.continue();
+        return;
+      }
+      await holdTransfer;
+      await route.abort().catch(() => {});
+    });
+
+    try {
+      await dialog.getByRole('button', { name: 'Upload 3 files' }).click();
+      await expect.poll(() => seen).toBe(2);
+      const cleanup = page.waitForResponse((response) => response.url().includes('/api/trpc/uploads.abort'));
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      expect((await cleanup).ok()).toBe(true);
+      await expect(page.getByText('completed.txt', { exact: true })).toBeVisible();
+      await expect(page.getByText('cancelled.txt', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('queued.txt', { exact: true })).toHaveCount(0);
+      expect(seen).toBe(2);
+    } finally {
+      releaseTransfer();
+    }
+  });
+
   test('dragging away from window hides overlay', async ({ page }) => {
     await loginAs(page);
     await page.waitForTimeout(1000);
@@ -95,5 +156,5 @@ async function loginAs(page: Page) {
   await page.getByPlaceholder('Enter password').fill(TEST_USER.password);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/\/w\//, { timeout: 15000 });
-  await page.waitForTimeout(1000);
+  await page.getByRole('button', { name: 'Maybe later', exact: true }).click();
 }

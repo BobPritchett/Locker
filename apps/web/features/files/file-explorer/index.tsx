@@ -530,7 +530,7 @@ export function FileExplorer({ folderId }: { folderId: string | null }) {
       </div>
 
       {/* Desktop file drop overlay */}
-      <DesktopDropOverlay onFilesDropped={handleDesktopDrop} />
+      {!showUpload && <DesktopDropOverlay onFilesDropped={handleDesktopDrop} />}
 
       {/* Dialogs */}
       <UploadDialog

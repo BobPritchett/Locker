@@ -298,7 +298,11 @@ export const uploadsRouter = createRouter({
         .select()
         .from(files)
         .where(
-          and(eq(files.id, input.fileId), eq(files.workspaceId, workspaceId)),
+          and(
+            eq(files.id, input.fileId),
+            eq(files.workspaceId, workspaceId),
+            eq(files.status, "uploading"),
+          ),
         );
 
       if (!file) return { success: true };

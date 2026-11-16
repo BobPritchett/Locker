@@ -28,6 +28,8 @@ export async function uploadFile(opts: UploadFileOptions): Promise<string> {
   const { file, folderId, workspaceSlug, conflictResolution, uploads, onProgress, abortSignal } =
     opts;
 
+  abortSignal?.throwIfAborted();
+
   // Step 1: Initiate upload
   const initResult = await uploads.initiate.mutateAsync({
     fileName: file.name,
@@ -40,6 +42,8 @@ export async function uploadFile(opts: UploadFileOptions): Promise<string> {
   const { fileId, strategy } = initResult;
 
   try {
+    abortSignal?.throwIfAborted();
+
     if (strategy === 'server-buffered') {
       // Fallback: upload through the server, pass fileId to update existing record
       await uploadServerBuffered(file, folderId, workspaceSlug, fileId, onProgress, abortSignal);
@@ -54,6 +58,7 @@ export async function uploadFile(opts: UploadFileOptions): Promise<string> {
         onProgress,
         abortSignal,
       );
+      abortSignal?.throwIfAborted();
       await uploads.complete.mutateAsync({ fileId });
       return fileId;
     }
@@ -67,6 +72,7 @@ export async function uploadFile(opts: UploadFileOptions): Promise<string> {
         onProgress,
         abortSignal,
       );
+      abortSignal?.throwIfAborted();
       await uploads.complete.mutateAsync({
         fileId,
         uploadId: initResult.uploadId,
@@ -88,6 +94,24 @@ export async function uploadFile(opts: UploadFileOptions): Promise<string> {
     }
     throw err;
   }
+}
+
+function sendUpload(
+  xhr: XMLHttpRequest,
+  body: Blob,
+  signal: AbortSignal | undefined,
+  reject: (reason: unknown) => void,
+) {
+  signal?.throwIfAborted();
+  xhr.onabort = () => reject(new DOMException('Upload cancelled', 'AbortError'));
+  if (signal) {
+    const abortRequest = () => xhr.abort();
+    signal.addEventListener('abort', abortRequest, { once: true });
+    xhr.addEventListener('loadend', () => signal.removeEventListener('abort', abortRequest), {
+      once: true,
+    });
+  }
+  xhr.send(body);
 }
 
 // ── Server-buffered upload (local storage) ──────────────────────────────
@@ -130,15 +154,11 @@ async function uploadServerBuffered(
 
     xhr.onerror = () => reject(new Error('Network error'));
 
-    if (abortSignal) {
-      abortSignal.addEventListener('abort', () => xhr.abort());
-    }
-
     xhr.open('PUT', '/api/upload/stream');
     xhr.setRequestHeader('x-workspace-slug', workspaceSlug);
     xhr.setRequestHeader('x-file-id', fileId);
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-    xhr.send(file); // Send raw file — no FormData wrapping
+    sendUpload(xhr, file, abortSignal, reject);
   });
 }
 
@@ -173,13 +193,9 @@ async function uploadPresignedPut(
 
     xhr.onerror = () => reject(new Error('Network error'));
 
-    if (abortSignal) {
-      abortSignal.addEventListener('abort', () => xhr.abort());
-    }
-
     xhr.open('PUT', presignedUrl);
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-    xhr.send(file);
+    sendUpload(xhr, file, abortSignal, reject);
   });
 }
 
@@ -216,9 +232,7 @@ async function uploadMultipart(
   const executing = new Set<Promise<void>>();
 
   for (const part of slices) {
-    if (abortSignal?.aborted) {
-      throw new DOMException('Upload cancelled', 'AbortError');
-    }
+    abortSignal?.throwIfAborted();
 
     const task = uploadSinglePart(
       part,
@@ -296,11 +310,7 @@ function doPartUpload(
     xhr.onerror = () =>
       reject(new Error(`Network error on part ${part.partNumber}`));
 
-    if (abortSignal) {
-      abortSignal.addEventListener('abort', () => xhr.abort());
-    }
-
     xhr.open('PUT', part.url);
-    xhr.send(part.blob);
+    sendUpload(xhr, part.blob, abortSignal, reject);
   });
 }

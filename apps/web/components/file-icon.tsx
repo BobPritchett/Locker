@@ -69,7 +69,9 @@ export function FileIcon({
     return <ExtIcon className={cn('text-muted-foreground', className)} />;
   }
 
-  const category = getFileCategory(mimeType ?? 'application/octet-stream');
+  const category = ext === 'zip'
+    ? 'archive'
+    : getFileCategory(mimeType ?? 'application/octet-stream');
   const CatIcon = CATEGORY_ICONS[category] ?? File;
 
   const colorMap: Record<string, string> = {
