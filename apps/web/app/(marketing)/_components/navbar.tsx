@@ -144,34 +144,30 @@ export function Navbar() {
                     <span className="text-sm font-medium leading-none">
                       GitHub
                     </span>
-                    {stars !== null && (
-                      <span
-                        className={cn(
-                          "text-xs leading-tight",
-                          hasScrolled
-                            ? "text-muted-foreground"
-                            : "text-primary-foreground/60",
-                        )}
-                      >
-                        {formatStars(stars)} stars
-                      </span>
-                    )}
+
+                    <span
+                      className={cn(
+                        "text-xs leading-tight",
+                        hasScrolled
+                          ? "text-muted-foreground"
+                          : "text-primary-foreground/60",
+                      )}
+                    >
+                      {formatStars(stars !== null ? stars : 0)} stars
+                    </span>
                   </div>
                 </a>
                 {session ? (
                   <Link href="/home">
-                    <Button size="sm" className="rounded-lg">
-                      Dashboard
-                    </Button>
+                    <Button className="rounded-lg h-[40px]">Dashboard</Button>
                   </Link>
                 ) : (
                   <>
                     <Link href="/login" className="hidden sm:block">
                       <Button
                         variant="ghost"
-                        size="sm"
                         className={cn(
-                          "rounded-lg",
+                          "rounded-lg h-[40px]",
                           !hasScrolled &&
                             "text-primary-foreground/80 hover:bg-white/10 hover:text-primary-foreground",
                         )}
@@ -180,7 +176,7 @@ export function Navbar() {
                       </Button>
                     </Link>
                     <Link href="/register">
-                      <Button size="sm" className="rounded-lg">
+                      <Button className="rounded-lg h-[40px]">
                         Get Started
                       </Button>
                     </Link>

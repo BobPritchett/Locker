@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     "@locker/common",
     "@locker/database",
     "@locker/email",
+    "@locker/jobs",
     "@locker/storage",
   ],
   serverExternalPackages: ["re2", "just-bash"],

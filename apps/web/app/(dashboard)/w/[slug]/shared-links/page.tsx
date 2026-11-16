@@ -5,11 +5,12 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc/client';
 import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { FileIcon } from '@/components/file-icon';
 
 export default function SharedLinksPage() {
-  const { data: links } = trpc.shares.list.useQuery();
+  const { data: links, isPending } = trpc.shares.list.useQuery();
   const utils = trpc.useUtils();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -27,8 +28,9 @@ export default function SharedLinksPage() {
     },
   });
 
-  const handleCopy = async (token: string, id: string) => {
-    const url = `${window.location.origin}/shared/${token}`;
+  const handleCopy = async (token: string, id: string, access: string) => {
+    const suffix = access === 'raw' ? '/raw' : '';
+    const url = `${window.location.origin}/shared/${token}${suffix}`;
     await navigator.clipboard.writeText(url);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -44,7 +46,35 @@ export default function SharedLinksPage() {
       </header>
 
       <div className="p-6">
-        {!links || links.length === 0 ? (
+        {isPending ? (
+          <div className="rounded-lg border bg-card overflow-hidden">
+            <div className="grid grid-cols-[1fr_80px_100px_120px_100px] gap-4 px-4 py-2 border-b bg-muted/50">
+              <span className="text-xs font-medium text-muted-foreground">Item</span>
+              <span className="text-xs font-medium text-muted-foreground">Type</span>
+              <span className="text-xs font-medium text-muted-foreground">Downloads</span>
+              <span className="text-xs font-medium text-muted-foreground">Created</span>
+              <span className="text-xs font-medium text-muted-foreground">Actions</span>
+            </div>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-[1fr_80px_100px_120px_100px] gap-4 px-4 py-2.5 border-b last:border-b-0 items-center"
+              >
+                <div className="flex items-center gap-2">
+                  <Skeleton className="size-4 rounded-md" />
+                  <Skeleton className="h-4 rounded-md" style={{ width: `${35 + ((i * 23) % 45)}%` }} />
+                </div>
+                <Skeleton className="h-4 w-12 rounded-md" />
+                <Skeleton className="h-4 w-8 rounded-md" />
+                <Skeleton className="h-4 w-16 rounded-md" />
+                <div className="flex items-center gap-1">
+                  <Skeleton className="size-6 rounded-md" />
+                  <Skeleton className="size-6 rounded-md" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !links || links.length === 0 ? (
           <div className="rounded-lg border bg-card flex flex-col items-center justify-center py-20 text-center">
             <ExternalLink className="size-8 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">No share links yet</p>
@@ -59,7 +89,7 @@ export default function SharedLinksPage() {
                 Item
               </span>
               <span className="text-xs font-medium text-muted-foreground">
-                Access
+                Type
               </span>
               <span className="text-xs font-medium text-muted-foreground">
                 Downloads
@@ -91,7 +121,7 @@ export default function SharedLinksPage() {
                   )}
                 </div>
                 <span className="text-xs font-mono text-muted-foreground capitalize">
-                  {link.access}
+                  {link.access === 'raw' ? 'Raw file' : 'Download'}
                 </span>
                 <span className="text-xs font-mono text-muted-foreground tabular-nums">
                   {link.downloadCount}
@@ -104,7 +134,7 @@ export default function SharedLinksPage() {
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    onClick={() => handleCopy(link.token, link.id)}
+                    onClick={() => handleCopy(link.token, link.id, link.access)}
                     disabled={!link.isActive}
                   >
                     {copiedId === link.id ? (

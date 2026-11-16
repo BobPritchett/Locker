@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, useEffect } from "react";
 import {
   Download,
   Lock,
@@ -31,6 +31,19 @@ export default function SharedPage({
     password: enteredPassword,
   });
 
+  // Raw-type links are meant to be hit at /shared/[token]/raw — if a user
+  // lands on the HTML page by mistake, redirect them to the proxy route.
+  // Forward the entered password so password-protected raw links work.
+  const isRawLink = !!data && "access" in data && data.access === "raw";
+  useEffect(() => {
+    if (isRawLink) {
+      const suffix = enteredPassword
+        ? `?p=${encodeURIComponent(enteredPassword)}`
+        : "";
+      window.location.replace(`/shared/${token}/raw${suffix}`);
+    }
+  }, [isRawLink, token, enteredPassword]);
+
   const browseQuery = trpc.shares.browseFolder.useQuery(
     {
       token,
@@ -49,10 +62,15 @@ export default function SharedPage({
         fileId,
         password: enteredPassword,
       });
+      const response = await fetch(result.url);
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = result.url;
+      a.href = blobUrl;
       a.download = result.filename;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -137,7 +155,7 @@ export default function SharedPage({
     );
   }
 
-  const { item, access } = data;
+  const { item } = data;
 
   // Determine what to display: browsed subfolder or root
   const isBrowsing = currentFolderId !== null;
@@ -181,12 +199,10 @@ export default function SharedPage({
               </div>
             </div>
 
-            {access === "download" && (
-              <Button className="w-full" onClick={() => handleDownload()}>
-                <Download className="size-3.5" />
-                Download
-              </Button>
-            )}
+            <Button className="w-full" onClick={() => handleDownload()}>
+              <Download className="size-3.5" />
+              Download
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -262,14 +278,12 @@ export default function SharedPage({
                     <span className="text-xs font-medium text-muted-foreground">
                       {formatBytes(file.size)}
                     </span>
-                    {access === "download" && (
-                      <button
-                        onClick={() => handleDownload(file.id)}
-                        className="text-primary hover:text-primary/80 cursor-pointer"
-                      >
-                        <Download className="size-3.5" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleDownload(file.id)}
+                      className="text-primary hover:text-primary/80 cursor-pointer"
+                    >
+                      <Download className="size-3.5" />
+                    </button>
                   </div>
                 ))}
 

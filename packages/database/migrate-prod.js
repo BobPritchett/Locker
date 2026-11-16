@@ -9,6 +9,10 @@ const crypto = require("crypto");
 
 const MIGRATIONS_DIR = path.join(__dirname, "drizzle");
 
+function hashMigration(sql) {
+  return crypto.createHash("sha256").update(sql).digest("hex");
+}
+
 async function migrate() {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
@@ -36,10 +40,13 @@ async function migrate() {
 
   let count = 0;
   for (const file of files) {
-    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf8");
-    const hash = crypto.createHash("sha256").update(sql).digest("hex");
-
-    if (appliedHashes.has(hash)) continue;
+    const sql = fs
+      .readFileSync(path.join(MIGRATIONS_DIR, file), "utf8")
+      .replace(/\r\n/g, "\n");
+    const hash = hashMigration(sql);
+    // Earlier Windows deploys recorded hashes of the CRLF checkout.
+    const windowsHash = hashMigration(sql.replace(/\n/g, "\r\n"));
+    if (appliedHashes.has(hash) || appliedHashes.has(windowsHash)) continue;
 
     console.log(`Applying migration: ${file}`);
     await client.query("BEGIN");

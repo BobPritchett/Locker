@@ -15,8 +15,18 @@ import {
   like,
 } from "drizzle-orm";
 import { createRouter, workspaceProcedure } from "../init";
-import { files, workspaces, folders, fileTags, tags } from "@locker/database";
-import { createStorageForFile } from "../../../server/storage";
+import {
+  files,
+  workspaces,
+  folders,
+  fileTags,
+  tags,
+  fileTranscriptions,
+} from "@locker/database";
+import {
+  createStorageForFile,
+  getFileStoragePath,
+} from "../../../server/storage";
 import {
   renameFileSchema,
   moveItemSchema,
@@ -33,6 +43,7 @@ import { qmdClient } from "../../plugins/handlers/qmd-client";
 import { ftsClient } from "../../plugins/handlers/fts-client";
 import { resolvePluginEndpoint } from "../../plugins/resolve-endpoint";
 import { invalidateWorkspaceVfsSnapshot } from "../../vfs/locker-vfs";
+import { deleteFileEverywhere } from "../../stores/lifecycle";
 
 export const filesRouter = createRouter({
   list: workspaceProcedure
@@ -43,16 +54,14 @@ export const filesRouter = createRouter({
         tagSlugs: z.array(z.string()).optional(),
         fileTypes: z
           .array(
-            z.enum([
-              "image",
-              "document",
-              "video",
-              "audio",
-              "archive",
-              "other",
-            ]),
+            z.enum(["image", "document", "video", "audio", "archive", "other"]),
           )
           .optional(),
+        // HTML5 input accept tokens — MIME types ("image/png"), MIME
+        // wildcards ("image/*"), or file extensions (".pdf"). Used by the
+        // browser extension's file-input intercept to scope the picker to
+        // the type the page asked for.
+        accept: z.array(z.string()).optional(),
         createdAfter: z.string().date().optional(),
         createdBefore: z.string().date().optional(),
         ...paginationSchema.shape,
@@ -66,6 +75,7 @@ export const filesRouter = createRouter({
         search,
         tagSlugs,
         fileTypes,
+        accept,
         createdAfter,
         createdBefore,
         page,
@@ -128,6 +138,32 @@ export const filesRouter = createRouter({
           } catch {}
         }
 
+        // Fallback: search file_transcriptions directly when no search plugins returned results
+        if (contentFileIds.size === 0) {
+          const words = search.split(/\s+/).filter((w) => w.length > 1);
+          if (words.length > 0) {
+            const transcriptionHits = await db
+              .select({ fileId: fileTranscriptions.fileId })
+              .from(fileTranscriptions)
+              .where(
+                and(
+                  eq(fileTranscriptions.workspaceId, ctx.workspaceId),
+                  eq(fileTranscriptions.status, "ready"),
+                  or(
+                    ...words.map((w) =>
+                      ilike(
+                        fileTranscriptions.content,
+                        `%${w.replace(/[%_\\]/g, "\\$&")}%`,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+              .limit(pageSize);
+            for (const hit of transcriptionHits) contentFileIds.add(hit.fileId);
+          }
+        }
+
         const nameMatch = ilike(files.name, `%${search}%`);
         if (contentFileIds.size > 0) {
           conditions.push(
@@ -160,7 +196,10 @@ export const filesRouter = createRouter({
             frontier = childIds;
           }
           conditions.push(
-            or(isNull(files.folderId), not(inArray(files.folderId, allHiddenIds)))!,
+            or(
+              isNull(files.folderId),
+              not(inArray(files.folderId, allHiddenIds)),
+            )!,
           );
         }
       } else {
@@ -232,6 +271,47 @@ export const filesRouter = createRouter({
           conditions.push(inArray(files.mimeType, mimeTypes));
         } else if (includeOther) {
           conditions.push(not(inArray(files.mimeType, allKnownMimeTypes)));
+        }
+      }
+
+      // HTML5 accept filter — OR across tokens. MIME wildcards become
+      // case-insensitive prefix matches against mimeType, exact MIME types
+      // become equality matches, and ".ext" tokens become case-insensitive
+      // suffix matches against the file name. We escape `%`/`_`/`\` from
+      // user-provided fragments so a stray underscore in an extension
+      // doesn't become a wildcard.
+      if (accept && accept.length > 0) {
+        const orParts = [];
+        let allowAll = false;
+        for (const raw of accept) {
+          const token = raw.trim().toLowerCase();
+          if (!token) continue;
+          if (token === "*/*" || token === "*") {
+            allowAll = true;
+            break;
+          }
+          const escapeLike = (s: string) =>
+            s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+          if (token.includes("/")) {
+            if (token.endsWith("/*")) {
+              const prefix = token.slice(0, -1); // "image/"
+              orParts.push(ilike(files.mimeType, `${escapeLike(prefix)}%`));
+            } else {
+              orParts.push(ilike(files.mimeType, escapeLike(token)));
+            }
+          } else if (token.startsWith(".") && token.length > 1) {
+            orParts.push(ilike(files.name, `%${escapeLike(token)}`));
+          }
+          // Anything else (bare extensions without a dot, etc.) is ignored;
+          // HTML5 doesn't define those.
+        }
+        if (!allowAll && orParts.length > 0) {
+          conditions.push(or(...orParts)!);
+        } else if (!allowAll && orParts.length === 0) {
+          // Caller passed an accept array that yielded no usable tokens
+          // (e.g. all malformed). Return zero results rather than silently
+          // ignoring the filter — the page asked for a type we can't match.
+          conditions.push(sql`false`);
         }
       }
 
@@ -354,6 +434,53 @@ export const filesRouter = createRouter({
         } catch {}
       }
 
+      // Fallback: search file_transcriptions directly when no search plugins returned results
+      if (contentMap.size === 0) {
+        const words = query.split(/\s+/).filter((w) => w.length > 1);
+        if (words.length > 0) {
+          const transcriptionHits = await db
+            .select({
+              fileId: fileTranscriptions.fileId,
+              content: fileTranscriptions.content,
+            })
+            .from(fileTranscriptions)
+            .where(
+              and(
+                eq(fileTranscriptions.workspaceId, ctx.workspaceId),
+                eq(fileTranscriptions.status, "ready"),
+                or(
+                  ...words.map((w) =>
+                    ilike(
+                      fileTranscriptions.content,
+                      `%${w.replace(/[%_\\]/g, "\\$&")}%`,
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .limit(20);
+
+          for (const hit of transcriptionHits) {
+            // Extract a snippet around the first matching word
+            const lowerContent = hit.content.toLowerCase();
+            let snippet: string | undefined;
+            for (const w of words) {
+              const idx = lowerContent.indexOf(w.toLowerCase());
+              if (idx !== -1) {
+                const start = Math.max(0, idx - 60);
+                const end = Math.min(hit.content.length, idx + w.length + 60);
+                snippet =
+                  (start > 0 ? "..." : "") +
+                  hit.content.slice(start, end).trim() +
+                  (end < hit.content.length ? "..." : "");
+                break;
+              }
+            }
+            contentMap.set(hit.fileId, { snippet, score: 1 });
+          }
+        }
+      }
+
       const escapedQuery = query.replace(/[%_\\]/g, "\\$&");
       const nameMatches = await db
         .select()
@@ -428,8 +555,11 @@ export const filesRouter = createRouter({
 
       if (!file) throw new Error("File not found");
 
-      const storage = await createStorageForFile(file.storageConfigId);
-      const url = await storage.getSignedUrl(file.storagePath, 3600);
+      const storage = await createStorageForFile(file.id);
+      const url = await storage.getSignedUrl(
+        await getFileStoragePath(file.id),
+        3600,
+      );
       return { url, filename: file.name, mimeType: file.mimeType };
     }),
 
@@ -489,86 +619,18 @@ export const filesRouter = createRouter({
 
       if (!file) throw new Error("File not found");
 
-      // Delete from storage
-      const storage = await createStorageForFile(file.storageConfigId);
-      await storage.delete(file.storagePath);
-
-      // De-index from search plugins
-      const qmdEndpoint = await resolvePluginEndpoint(
-        ctx.db,
-        ctx.workspaceId,
-        "qmd-search",
-        {
-          serviceUrl: process.env.QMD_SERVICE_URL,
-          apiSecret: process.env.QMD_API_SECRET,
-        },
-      );
-      if (qmdEndpoint) {
-        void qmdClient
-          .deindexFile(
-            { workspaceId: ctx.workspaceId, fileId: file.id },
-            qmdEndpoint,
-          )
-          .catch(() => {});
-      }
-
-      const ftsEndpoint = await resolvePluginEndpoint(
-        ctx.db,
-        ctx.workspaceId,
-        "fts-search",
-        {
-          serviceUrl: process.env.FTS_SERVICE_URL,
-          apiSecret: process.env.FTS_API_SECRET,
-        },
-      );
-      if (ftsEndpoint) {
-        void ftsClient
-          .deindexFile(
-            { workspaceId: ctx.workspaceId, fileId: file.id },
-            ftsEndpoint,
-          )
-          .catch(() => {});
-      }
-
-      // Delete from database
-      await ctx.db.delete(files).where(eq(files.id, input.id));
-
-      // Update storage usage
-      await ctx.db
-        .update(workspaces)
-        .set({
-          storageUsed: sql`GREATEST(${workspaces.storageUsed} - ${file.size}, 0)`,
-        })
-        .where(eq(workspaces.id, ctx.workspaceId));
-
-      invalidateWorkspaceVfsSnapshot(ctx.workspaceId);
+      await deleteFileEverywhere({
+        db: ctx.db,
+        workspaceId: ctx.workspaceId,
+        fileId: input.id,
+        deletedByUserId: ctx.userId,
+      });
       return { success: true };
     }),
 
   deleteMany: workspaceProcedure
     .input(z.object({ ids: z.array(z.string().uuid()) }))
     .mutation(async ({ ctx, input }) => {
-      let totalSize = 0;
-
-      const qmdEndpoint = await resolvePluginEndpoint(
-        ctx.db,
-        ctx.workspaceId,
-        "qmd-search",
-        {
-          serviceUrl: process.env.QMD_SERVICE_URL,
-          apiSecret: process.env.QMD_API_SECRET,
-        },
-      );
-      const ftsEndpoint = await resolvePluginEndpoint(
-        ctx.db,
-        ctx.workspaceId,
-        "fts-search",
-        {
-          serviceUrl: process.env.FTS_SERVICE_URL,
-          apiSecret: process.env.FTS_API_SECRET,
-        },
-      );
-
       for (const id of input.ids) {
         const [file] = await ctx.db
           .select()
@@ -576,39 +638,14 @@ export const filesRouter = createRouter({
           .where(and(eq(files.id, id), eq(files.workspaceId, ctx.workspaceId)));
 
         if (file) {
-          const storage = await createStorageForFile(file.storageConfigId);
-          await storage.delete(file.storagePath);
-          if (qmdEndpoint) {
-            void qmdClient
-              .deindexFile(
-                { workspaceId: ctx.workspaceId, fileId: file.id },
-                qmdEndpoint,
-              )
-              .catch(() => {});
-          }
-          if (ftsEndpoint) {
-            void ftsClient
-              .deindexFile(
-                { workspaceId: ctx.workspaceId, fileId: file.id },
-                ftsEndpoint,
-              )
-              .catch(() => {});
-          }
-          await ctx.db.delete(files).where(eq(files.id, id));
-          totalSize += file.size;
+          await deleteFileEverywhere({
+            db: ctx.db,
+            workspaceId: ctx.workspaceId,
+            fileId: id,
+            deletedByUserId: ctx.userId,
+          });
         }
       }
-
-      if (totalSize > 0) {
-        await ctx.db
-          .update(workspaces)
-          .set({
-            storageUsed: sql`GREATEST(${workspaces.storageUsed} - ${totalSize}, 0)`,
-          })
-          .where(eq(workspaces.id, ctx.workspaceId));
-      }
-
-      invalidateWorkspaceVfsSnapshot(ctx.workspaceId);
       return { success: true, deleted: input.ids.length };
     }),
 });

@@ -1,7 +1,7 @@
 # ── Stage 1: Base ────────────────────────────────────────────────────────────
 FROM node:22-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ openssl \
+  && apt-get install -y --no-install-recommends python3 make g++ openssl pkg-config liblzma-dev \
   && rm -rf /var/lib/apt/lists/*
 ENV PYTHON=/usr/bin/python3
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
@@ -10,10 +10,13 @@ WORKDIR /app
 # ── Stage 2: Install dependencies ────────────────────────────────────────────
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
+COPY apps/extension/package.json ./apps/extension/package.json
 COPY apps/web/package.json ./apps/web/package.json
+COPY apps/workflows/package.json ./apps/workflows/package.json
 COPY packages/common/package.json ./packages/common/package.json
 COPY packages/database/package.json ./packages/database/package.json
 COPY packages/email/package.json ./packages/email/package.json
+COPY packages/jobs/package.json ./packages/jobs/package.json
 COPY packages/storage/package.json ./packages/storage/package.json
 RUN pnpm install --frozen-lockfile
 
